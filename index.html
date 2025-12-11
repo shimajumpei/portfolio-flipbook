@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+    <meta name="googlebot" content="noindex, nofollow">
+    <title>Flipbook Viewer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/turn.js/3/turn.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+            /* Disable text selection */
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+
+        #flipbook-viewport {
+            perspective: 3000px;
+        }
+
+        #flipbook {
+            width: 1200px;
+            height: 424px;
+        }
+
+        #flipbook .page {
+            background: white;
+            overflow: hidden;
+        }
+
+        #flipbook .page img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            background: white;
+            /* Prevent image saving */
+            pointer-events: none;
+            -webkit-user-drag: none;
+            -khtml-user-drag: none;
+            -moz-user-drag: none;
+            -o-user-drag: none;
+            user-drag: none;
+        }
+
+        /* Page shadows and effects */
+        #flipbook .page.odd {
+            background: linear-gradient(to right, #f7f7f7 0%, #fff 10%);
+        }
+
+        #flipbook .page.even {
+            background: linear-gradient(to left, #f7f7f7 0%, #fff 10%);
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .nav-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            padding: 12px 24px;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+
+        .nav-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .nav-btn:active {
+            transform: translateY(0);
+        }
+
+        .page-info {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 14px;
+            min-width: 100px;
+            text-align: center;
+        }
+
+        .instructions {
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 12px;
+            margin-top: 10px;
+        }
+
+        /* Loading overlay */
+        #loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(26, 26, 46, 0.95);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            transition: opacity 0.5s ease;
+        }
+
+        #loading.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        #loading p {
+            color: white;
+            margin-top: 20px;
+            font-size: 14px;
+        }
+
+        /* Top toolbar */
+        .toolbar {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            gap: 10px;
+            z-index: 100;
+        }
+
+        .toolbar-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            padding: 10px;
+            cursor: pointer;
+            border-radius: 8px;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .toolbar-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .toolbar-btn svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        /* Fullscreen maximize button (center) */
+        .maximize-btn {
+            position: fixed;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 12px 24px;
+            cursor: pointer;
+            border-radius: 30px;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            z-index: 100;
+        }
+
+        .maximize-btn:hover {
+            background: rgba(255, 255, 255, 0.25);
+            transform: translateX(-50%) scale(1.05);
+        }
+
+        .maximize-btn svg {
+            width: 18px;
+            height: 18px;
+        }
+
+        /* Fullscreen mode styles */
+        body.fullscreen-mode {
+            background: #000;
+        }
+
+        body.fullscreen-mode .maximize-btn {
+            display: none;
+        }
+
+        body.fullscreen-mode .toolbar {
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        body.fullscreen-mode:hover .toolbar {
+            opacity: 1;
+        }
+
+        body.fullscreen-mode .controls {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        body.fullscreen-mode:hover .controls {
+            opacity: 1;
+        }
+
+        body.fullscreen-mode .instructions {
+            display: none;
+        }
+
+        /* Overlay to prevent right-click saving */
+        .page-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: transparent;
+            z-index: 10;
+        }
+
+        /* Responsive */
+        @media (max-width: 1250px) {
+            #flipbook {
+                width: 900px;
+                height: 318px;
+            }
+        }
+
+        @media (max-width: 950px) {
+            #flipbook {
+                width: 700px;
+                height: 247px;
+            }
+        }
+
+        @media (max-width: 750px) {
+            #flipbook {
+                width: 500px;
+                height: 177px;
+            }
+
+            .nav-btn {
+                padding: 8px 16px;
+                font-size: 14px;
+            }
+
+            .maximize-btn {
+                padding: 10px 18px;
+                font-size: 12px;
+            }
+        }
+
+        @media (max-width: 550px) {
+            #flipbook {
+                width: 350px;
+                height: 124px;
+            }
+        }
+    </style>
+</head>
+<body oncontextmenu="return false;" ondragstart="return false;">
+    <div id="loading">
+        <div class="spinner"></div>
+        <p>Loading flipbook...</p>
+    </div>
+
+    <div class="toolbar">
+        <button class="toolbar-btn" onclick="toggleFullscreen()" title="Fullscreen">
+            <svg id="fullscreen-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+            </svg>
+            <svg id="exit-fullscreen-icon" style="display:none;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/>
+            </svg>
+        </button>
+    </div>
+
+    <button class="maximize-btn" onclick="toggleFullscreen()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+        </svg>
+        画面を最大化
+    </button>
+
+    <div class="container">
+        <div id="flipbook-viewport">
+            <div id="flipbook"></div>
+        </div>
+
+        <div class="controls">
+            <button class="nav-btn" onclick="prevPage()">
+                ← Previous
+            </button>
+            <span class="page-info" id="page-info">Page 1 / 32</span>
+            <button class="nav-btn" onclick="nextPage()">
+                Next →
+            </button>
+        </div>
+
+        <p class="instructions">Click on page corners to turn, or use arrow keys</p>
+    </div>
+
+    <script>
+        const totalPages = 32;
+        let flipbook;
+
+        // Disable various ways to save images
+        document.addEventListener('contextmenu', e => e.preventDefault());
+        document.addEventListener('dragstart', e => e.preventDefault());
+
+        // Disable keyboard shortcuts for saving
+        document.addEventListener('keydown', function(e) {
+            // Disable Ctrl+S, Ctrl+Shift+S
+            if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+                e.preventDefault();
+                return false;
+            }
+            // Disable Ctrl+U (view source)
+            if ((e.ctrlKey || e.metaKey) && (e.key === 'u' || e.key === 'U')) {
+                e.preventDefault();
+                return false;
+            }
+            // Disable Ctrl+Shift+I (dev tools)
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'i' || e.key === 'I')) {
+                e.preventDefault();
+                return false;
+            }
+            // Disable F12 (dev tools)
+            if (e.key === 'F12') {
+                e.preventDefault();
+                return false;
+            }
+            // Disable PrintScreen
+            if (e.key === 'PrintScreen') {
+                e.preventDefault();
+                return false;
+            }
+        });
+
+        // Disable copy
+        document.addEventListener('copy', e => e.preventDefault());
+
+        $(document).ready(function() {
+            // Create pages with overlay to prevent direct image access
+            for (let i = 1; i <= totalPages; i++) {
+                const pageNum = i.toString().padStart(2, '0');
+                $('#flipbook').append(
+                    `<div class="page">
+                        <img src="pages/page_${pageNum}.jpg" alt="Page ${i}" loading="lazy" draggable="false">
+                        <div class="page-overlay"></div>
+                    </div>`
+                );
+            }
+
+            // Initialize turn.js
+            flipbook = $('#flipbook');
+            flipbook.turn({
+                width: 1200,
+                height: 424,
+                autoCenter: true,
+                display: 'double',
+                acceleration: true,
+                gradients: true,
+                elevation: 50,
+                duration: 1000,
+                when: {
+                    turned: function(e, page) {
+                        updatePageInfo(page);
+                    }
+                }
+            });
+
+            // Hide loading after images start loading
+            setTimeout(() => {
+                $('#loading').addClass('hidden');
+            }, 1000);
+
+            // Keyboard navigation
+            $(document).keydown(function(e) {
+                if (e.keyCode === 37) { // Left arrow
+                    flipbook.turn('previous');
+                } else if (e.keyCode === 39) { // Right arrow
+                    flipbook.turn('next');
+                } else if (e.keyCode === 27) { // Escape
+                    if (document.fullscreenElement) {
+                        document.exitFullscreen();
+                    }
+                }
+            });
+
+            // Handle window resize
+            $(window).resize(function() {
+                resizeFlipbook();
+            });
+
+            resizeFlipbook();
+
+            // Handle fullscreen change
+            document.addEventListener('fullscreenchange', handleFullscreenChange);
+            document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+        });
+
+        function handleFullscreenChange() {
+            if (document.fullscreenElement) {
+                document.body.classList.add('fullscreen-mode');
+                $('#fullscreen-icon').hide();
+                $('#exit-fullscreen-icon').show();
+                // Resize flipbook for fullscreen
+                setTimeout(resizeFlipbook, 100);
+            } else {
+                document.body.classList.remove('fullscreen-mode');
+                $('#fullscreen-icon').show();
+                $('#exit-fullscreen-icon').hide();
+                setTimeout(resizeFlipbook, 100);
+            }
+        }
+
+        function resizeFlipbook() {
+            const windowWidth = $(window).width();
+            const windowHeight = $(window).height();
+            const isFullscreen = document.fullscreenElement !== null;
+
+            let width, height;
+
+            if (isFullscreen) {
+                // In fullscreen, use more of the screen
+                const aspectRatio = 841.89 / 595.276; // Original page aspect ratio (landscape)
+                const bookAspectRatio = aspectRatio * 2; // Two pages side by side
+
+                const maxWidth = windowWidth * 0.95;
+                const maxHeight = windowHeight * 0.85;
+
+                if (maxWidth / bookAspectRatio <= maxHeight) {
+                    width = maxWidth;
+                    height = width / bookAspectRatio;
+                } else {
+                    height = maxHeight;
+                    width = height * bookAspectRatio;
+                }
+            } else {
+                if (windowWidth <= 550) {
+                    width = 350;
+                    height = 124;
+                } else if (windowWidth <= 750) {
+                    width = 500;
+                    height = 177;
+                } else if (windowWidth <= 950) {
+                    width = 700;
+                    height = 247;
+                } else if (windowWidth <= 1250) {
+                    width = 900;
+                    height = 318;
+                } else {
+                    width = 1200;
+                    height = 424;
+                }
+            }
+
+            flipbook.turn('size', width, height);
+        }
+
+        function updatePageInfo(page) {
+            const display = flipbook.turn('display');
+            if (display === 'double') {
+                const secondPage = page + 1 <= totalPages ? page + 1 : null;
+                if (page === 1) {
+                    $('#page-info').text(`Page 1 / ${totalPages}`);
+                } else if (secondPage) {
+                    $('#page-info').text(`Pages ${page}-${secondPage} / ${totalPages}`);
+                } else {
+                    $('#page-info').text(`Page ${page} / ${totalPages}`);
+                }
+            } else {
+                $('#page-info').text(`Page ${page} / ${totalPages}`);
+            }
+        }
+
+        function prevPage() {
+            flipbook.turn('previous');
+        }
+
+        function nextPage() {
+            flipbook.turn('next');
+        }
+
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(err => {
+                    console.log('Fullscreen error:', err);
+                });
+            } else {
+                document.exitFullscreen();
+            }
+        }
+
+        // Additional protection: Clear clipboard if image data detected
+        setInterval(() => {
+            if (navigator.clipboard && navigator.clipboard.readText) {
+                // Periodically check - this is a deterrent, not foolproof
+            }
+        }, 1000);
+    </script>
+</body>
+</html>
